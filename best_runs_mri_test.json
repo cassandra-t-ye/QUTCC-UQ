@@ -1,0 +1,12 @@
+{
+  "mri": {
+    "experiment_type": "mri",
+    "unet_quantile_root": "unet_quantile_epochs50_bs12_2025-10-18-10.07.36",
+    "quantile_epoch": 5,
+    "calib_data_path": "DATAROOT/Fast_MRI/RAW_singlecoil_train/calibration",
+    "test_data_path": "DATAROOT/Fast_MRI/RAW_singlecoil_train/validation",
+    "in_channels": 1,
+    "batch_size": 12,
+    "experiments_folder": "ROOT/experiments"
+  }
+}

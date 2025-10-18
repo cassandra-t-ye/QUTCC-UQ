@@ -72,7 +72,9 @@ class FastMRIDataset(Dataset):
       
         # gather up slices 
         for fname in files:
-          if 'cache' in str(fname):
+          # ignore extra directories in training folder if they exist
+          last_part = str(fname).split('/')[-1]
+          if 'cache' in str(fname) or 'training' in last_part or 'validation' in last_part or 'calibration' in last_part:
             continue
           metadata, num_slices = self._retrieve_metadata(fname)
           assert(num_slices > slice_sample_period)
