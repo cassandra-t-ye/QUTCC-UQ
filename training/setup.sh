@@ -1,4 +1,5 @@
-CONDA_ROOT=/share/apps/anaconda3/2021.05
+# Replace with your root
+CONDA_ROOT=/share/apps/software/anaconda3
 
 # Source the conda.sh hook so that `conda activate` works in bash
 if [ -f "${CONDA_ROOT}/etc/profile.d/conda.sh" ]; then
@@ -7,11 +8,9 @@ else
   echo "ERROR: cannot find ${CONDA_ROOT}/etc/profile.d/conda.sh" >&2
   exit 1
 fi
-
-conda activate qutcc
+conda activate qutcc2
 
 export TMPDIR=/tmp
 export XDG_RUNTIME_DIR=/tmp
 
-python -c "import torch; print(torch.cuda.is_available())"
-python -c "import torch; print(torch.cuda.device_count())"
+python -c "import torch; print('cuda available', torch.cuda.is_available()); print('device count', torch.cuda.device_count())"

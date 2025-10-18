@@ -44,20 +44,22 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # ROOT = "/path/to/data/here"
-ROOT = "/share/monakhova/Cassandra_data/UQNet_proj"
+ROOT = "/home/bl788/QUTCC-UQ"
+DATAROOT = "/share/monakhova/Cassandra_data/UQNet_proj" # make the same as ROOT if data is in the same directory
 
-with open(Path(__file__).parent / "best_runs.json", "r") as f:
+with open(Path(__file__).parent / "best_runs_mri_test.json", "r") as f:
     BEST_RUNS = json.load(f)
 
 # Replace placeholder "ROOT/" with the actual ROOT
-def inject_root(d):
+def inject_root(d, replace="ROOT", with_path=ROOT):
     for k, v in d.items():
-        if isinstance(v, str) and v.startswith("ROOT/"):
-            d[k] = v.replace("ROOT", ROOT, 1)
+        if isinstance(v, str) and v.startswith(replace):
+            d[k] = v.replace(replace, with_path, 1)
         elif isinstance(v, dict):
-            inject_root(v)
+            inject_root(v, replace=replace, with_path=with_path)
 
-inject_root(BEST_RUNS)
+inject_root(BEST_RUNS, replace="ROOT", with_path=ROOT)
+inject_root(BEST_RUNS, replace="DATAROOT", with_path=DATAROOT)
 
 print(BEST_RUNS)
 
@@ -92,7 +94,7 @@ def run(tasks: List[str] = None,
             calib_results = [
                 {'net_type': 'im2im', 'lambda': info['im2im_lambda'], 'epoch': info['im2im_epoch']},
                 {'net_type': 'unet_im2im', 'lambda': info['unet_im2im_lambda'], 'epoch': info['unet_im2im_epoch']},
-                {'net_type': 'quantile', 'lower_q': info['quantile_lower_q'], 'upper_q': info['quantile_upper_q'], 'epoch': info['quantile_epoch']}
+                {'net_type': 'unet_quantile', 'lower_q': info['quantile_lower_q'], 'upper_q': info['quantile_upper_q'], 'epoch': info['quantile_epoch']}
             ]
 
             print(
@@ -113,7 +115,7 @@ def run(tasks: List[str] = None,
                 requests = [
                     ("im2im", info['im2im_epoch']),
                     ("unet_im2im", info['unet_im2im_epoch']),
-                    ("quantile", info['quantile_epoch'])
+                    ("unet_quantile", info['quantile_epoch'])
                 ]
                 calib_results = calibration_manager.calibrate_multiple(requests)
             else:
@@ -123,7 +125,7 @@ def run(tasks: List[str] = None,
                 calib_results = [
                     {'net_type': 'im2im', 'lambda': im2im_lambda, 'epoch': info['im2im_epoch']},
                     {'net_type': 'unet_im2im', 'lambda': im2im_deep_lambda, 'epoch': info['unet_im2im_epoch']},
-                    {'net_type': 'quantile', 'lower_q': lower_q, 'upper_q': upper_q, 'epoch': info['quantile_epoch']},
+                    {'net_type': 'unet_quantile', 'lower_q': lower_q, 'upper_q': upper_q, 'epoch': info['quantile_epoch']},
                 ]
 
         # calib_risk = get_calibration_risk(experiment_type, info, device, calib_subset)
@@ -150,8 +152,8 @@ def run(tasks: List[str] = None,
         all_df.append(df_intervals_missed)
         
         stratified_results = compute_stratified_risk(df_intervals_missed)
-        # for method in ['im2im', 'im2im_deep', 'quantile']:
-        for method in ['im2im_deep', 'quantile']:
+        # for method in ['im2im', 'im2im_deep', 'unet_quantile']:
+        for method in ['im2im_deep', 'unet_quantile']:
             print(f"{method} Stratified Risk")
             print(json.dumps(_prepare_for_json(stratified_results[method]), indent=4))
             print(f"{method} Average Risk: {risk_dict[method]['mean_risk']:.4f}")
@@ -165,12 +167,12 @@ def run(tasks: List[str] = None,
             "mean_interval_length": {
                 "im2im": df_intervals_missed[df_intervals_missed["method"] == "im2im"]["interval"].mean(),
                 "im2im_deep": df_intervals_missed[df_intervals_missed["method"] == "im2im_deep"]["interval"].mean(),
-                "quantile": df_intervals_missed[df_intervals_missed["method"] == "quantile"]["interval"].mean(),
+                "unet_quantile": df_intervals_missed[df_intervals_missed["method"] == "unet_quantile"]["interval"].mean(),
             },
             "std_interval_length": {
                 "im2im": df_intervals_missed[df_intervals_missed["method"] == "im2im"]["interval"].std(),
                 "im2im_deep": df_intervals_missed[df_intervals_missed["method"] == "im2im_deep"]["interval"].std(),
-                "quantile": df_intervals_missed[df_intervals_missed["method"] == "quantile"]["interval"].std(),
+                "unet_quantile": df_intervals_missed[df_intervals_missed["method"] == "unet_quantile"]["interval"].std(),
             },
         }
 
@@ -286,7 +288,7 @@ def calibrate_quantile(experiment_type: str, info: Dict, device: torch.device,
                                         experiment_type=experiment_type, run_folder_root=info["quantile_root"],
                                         epoch=epoch, device=device, 
                                         experiments_folder=info["experiments_folder"])
-    calib_dataloader = get_calib_dataloader(experiment_type, info, net="quantile", calib_subset=calib_subset)
+    calib_dataloader = get_calib_dataloader(experiment_type, info, net="unet_quantile", calib_subset=calib_subset)
 
     analysis_dir = Path(run_folder) / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
@@ -307,7 +309,7 @@ def calibrate_quantile(experiment_type: str, info: Dict, device: torch.device,
 def compute_stratified_risk(df_intervals_missed: pd.DataFrame) -> Dict[str, Dict[str, float]]:
     stratified_results = {}
 
-    for method in ["im2im", "im2im_deep", "quantile"]:
+    for method in ["im2im", "im2im_deep", "unet_quantile"]:
         method_df = df_intervals_missed[df_intervals_missed["method"] == method][["interval", "missed"]]
         stratified_results[method] = size_stratified_risk(method_df)
 
@@ -316,7 +318,7 @@ def compute_stratified_risk(df_intervals_missed: pd.DataFrame) -> Dict[str, Dict
 def create_stratified_risk_plot(all_stratified: Dict[str, Dict[str, Dict[str, float]]], save_dir: Path):
     categories  = ["Short", "Short-Medium", "Medium-Long", "Long"]
     experiments = list(all_stratified.keys())
-    methods     = ["im2im_deep", "quantile"]
+    methods     = ["im2im_deep", "unet_quantile"]
 
     xtick_labels = []
     for exp in experiments:
@@ -337,11 +339,11 @@ def create_stratified_risk_plot(all_stratified: Dict[str, Dict[str, Dict[str, fl
 
     colors_im2im_deep = ['#e6e6ff', '#bfbfff', '#9999ff', '#7373ff']
     colors_quantile = ["#ffe6e6", '#ffbfbf', '#ff9999', '#ff7373']
-    palette_map = {"im2im_deep": colors_im2im_deep, "quantile": colors_quantile}
+    palette_map = {"im2im_deep": colors_im2im_deep, "unet_quantile": colors_quantile}
     for i, cat in enumerate(categories):
         bar_colors = []
         for lbl in xtick_labels:
-            method = "im2im_deep" if "Deep" in lbl else "quantile"
+            method = "im2im_deep" if "Deep" in lbl else "unet_quantile"
             bar_colors.append(palette_map[method][i])
         ax.bar(x + (i - 1.5) * bar_width,   
             data[cat],
@@ -380,10 +382,10 @@ def create_stratified_risk_plot(all_stratified: Dict[str, Dict[str, Dict[str, fl
 
 def create_violin_plot(all_df: pd.DataFrame, summary: Dict[str, Dict], save_dir: Path):
     df_violin = all_df[(all_df["method"] == "im2im_deep") | 
-                    (all_df["method"] == "quantile")][["experiment", "method", "interval"]]
-    method_order = ["im2im_deep", "quantile"]
-    method_labels = {"im2im_deep": "Im2Im-Deep", "quantile": "QUTCC"}
-    palette = {'im2im_deep': '#7373ff', 'quantile': '#ff7373'}
+                    (all_df["method"] == "unet_quantile")][["experiment", "method", "interval"]]
+    method_order = ["im2im_deep", "unet_quantile"]
+    method_labels = {"im2im_deep": "Im2Im-Deep", "unet_quantile": "QUTCC"}
+    palette = {'im2im_deep': '#7373ff', 'unet_quantile': '#ff7373'}
 
     multiplier = 2.5
     fig, ax = plt.subplots(figsize=(5.52 * multiplier, 2.5 * multiplier))
@@ -408,7 +410,7 @@ def create_violin_plot(all_df: pd.DataFrame, summary: Dict[str, Dict], save_dir:
 
     legend_elements = [
         Patch(facecolor=palette['im2im_deep'], label='Im2Im-Deep'), 
-        Patch(facecolor=palette['quantile'], label='QUTCC')
+        Patch(facecolor=palette['unet_quantile'], label='QUTCC')
     ]
     ax.legend(handles=legend_elements, fontsize=8 * multiplier, loc='upper right', bbox_to_anchor=(1.2, 1.2))
 
@@ -421,7 +423,7 @@ def create_violin_plot(all_df: pd.DataFrame, summary: Dict[str, Dict], save_dir:
     fig.savefig(violin_plot_path, dpi=300, bbox_inches="tight")
     print("Saved split violin plot to:", violin_plot_path)
 
-def get_test_dataloader(experiment_type, info, net=Literal['im2im', 'quantile'], batch_size_multiplier=0.5, test_subset=200):
+def get_test_dataloader(experiment_type, info, net=Literal['im2im', 'unet_quantile'], batch_size_multiplier=0.5, test_subset=200):
     if experiment_type == "mri":
         mask_info = {'type': 'equispaced', 'center_fraction' : [0.08], 'acceleration' : [4]}
         test_dataset = FastMRIDataset(info["test_data_path"], normalize_input='standard', normalize_output='min-max', 
@@ -473,7 +475,7 @@ def calculate_statistics(
 
     Returns:
         results (dict): Nested dict with mean/std for MSE, SSIM, PSNR, LPIPS
-                        for im2im, QUTCC (quantile), and im2im_deep.
+                        for im2im, QUTCC (unet_quantile), and im2im_deep.
         (optionally) raw (dict of tensors): Per-sample metric tensors if return_raw=True.
     """
     # ── Setup ──────────────────────────────────────────────────────────────────────
@@ -513,7 +515,7 @@ def calculate_statistics(
 
     # ── Dataloader & metrics ──────────────────────────────────────────────────────
     dataloader = get_test_dataloader(
-        task, BEST_RUNS[task], net="quantile",
+        task, BEST_RUNS[task], net="unet_quantile",
         batch_size_multiplier=batch_size_multiplier,
         test_subset=test_subset,
     )
@@ -551,7 +553,7 @@ def calculate_statistics(
             clean_in  = (im2im_clean.clamp(0,1) * 2.0 - 1.0).expand(-1, 3, -1, -1)
             im2im_lpips_acc.append(lpips_metric(im2im_in, clean_in))
 
-            # Quantile (QUTCC @ q=0.5)
+            # unet_quantile (QUTCC @ q=0.5)
             q_prediction = torch.tensor([0.5], device=device, dtype=torch.float32)
             quantile_output = quant_model(noisy.to(device), q_prediction)
             quantile_clean = clean
@@ -643,7 +645,7 @@ def check_crossings(experiment_type: str, info: Dict, device: torch.device,
     analysis_dir = run_folder / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
 
-    crossings_dataloader = get_calib_dataloader(experiment_type, info, net="quantile",
+    crossings_dataloader = get_calib_dataloader(experiment_type, info, net="unet_quantile",
                                                  batch_size_multiplier=0.1, calib_subset=calib_subset)
     quantiles = torch.arange(0.1, 1.0, 0.1).to(device)
     crossings_file = analysis_dir / "quantile_crossings.json"

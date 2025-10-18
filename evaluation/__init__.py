@@ -158,7 +158,7 @@ def get_risk(dataloader: DataLoader, im2im_model: ModelWithUncertainty, im2im_la
     
     return totals                             
         
-def get_test_intervals_missed(net_type: Literal["im2im", "unet_im2im", "quantile"],
+def get_test_intervals_missed(net_type: Literal["im2im", "unet_im2im", "unet_quantile"],
                               test_dataloader: DataLoader, model: nn.Module,
                               lambda_or_lower_q: float, upper_q: Optional[float] = None,
                               device: torch.device = torch.device("cuda")) -> Tuple[pd.DataFrame, Dict[str, float]]:
@@ -183,7 +183,7 @@ def get_test_intervals_missed(net_type: Literal["im2im", "unet_im2im", "quantile
                 timevect = torch.full((B,), 0.5, device=device, dtype=torch.float32)
                 pred = model(noisy, timevect)
                 lower, upper = return_calibrated_bounds(pred, lambda_or_lower_q)
-            elif net_type == "quantile":
+            elif net_type == "unet_quantile":
                 lower_q = lambda_or_lower_q
                 assert upper_q is not None, "Upper quantile must be provided for quantile model"
                 quantiles = torch.tensor([lower_q, upper_q], device=device, dtype=torch.float32)

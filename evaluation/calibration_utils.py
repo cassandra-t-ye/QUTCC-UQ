@@ -25,7 +25,7 @@ from models.checkpointing import load_checkpoint_for_inference
 from utils import _prepare_for_json
 
 
-def get_calib_dataloader(experiment_type: str, info: Dict[str, Any], net: Literal['im2im', 'quantile', 'unet_im2im'], 
+def get_calib_dataloader(experiment_type: str, info: Dict[str, Any], net: Literal['im2im', 'unet_quantile', 'unet_im2im'], 
                          batch_size_multiplier: float = 1.0, calib_subset: int = 200) -> DataLoader:
     batch_size = int(info["batch_size"] * batch_size_multiplier)
 
@@ -72,7 +72,7 @@ def get_calib_dataloader(experiment_type: str, info: Dict[str, Any], net: Litera
     print(f"Calibration dataset size: {len(calib_dataset)}")
     return DataLoader(calib_dataset, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
 
-def get_test_dataloader(experiment_type: str, info: Dict[str, Any], net: Literal['im2im', 'quantile', 'unet_im2im'], 
+def get_test_dataloader(experiment_type: str, info: Dict[str, Any], net: Literal['im2im', 'unet_quantile', 'unet_im2im'], 
                         batch_size_multiplier: float = 0.5, test_subset: int = 200) -> DataLoader:
     batch_size = int(info["batch_size"] * batch_size_multiplier)
     if experiment_type == "mri":
@@ -116,14 +116,14 @@ def get_test_dataloader(experiment_type: str, info: Dict[str, Any], net: Literal
     return DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
 
 def get_checkpoint_info(experiment_type: str, info: Dict, epoch: int, 
-                       net_type: Literal['im2im', 'unet_im2im', "quantile"]) -> Tuple[Path, str]:
+                       net_type: Literal['im2im', 'unet_im2im', "unet_quantile"]) -> Tuple[Path, str]:
     run_folder = Path(info["experiments_folder"]) / experiment_type / info[f"{net_type}_root"]
     analysis_dir = run_folder / "analysis"
-    filename = f"quantile_qs_epoch_{epoch}.json" if net_type == "quantile" else f"{net_type}_epoch{epoch}_lambda.pt"
+    filename = f"quantile_qs_epoch_{epoch}.json" if net_type == "unet_quantile" else f"{net_type}_epoch{epoch}_lambda.pt"
     return analysis_dir, filename
 
 def load_existing_checkpoint(experiment_type: str, info: Dict, epoch: int, 
-                           net_type: Literal['im2im', 'unet_im2im', "quantile"]) -> Optional[Dict[str, Any]]:
+                           net_type: Literal['im2im', 'unet_im2im', "unet_quantile"]) -> Optional[Dict[str, Any]]:
     try:
         analysis_dir, filename = get_checkpoint_info(experiment_type, info, epoch, net_type)
         checkpoint_file = analysis_dir / filename
@@ -132,7 +132,7 @@ def load_existing_checkpoint(experiment_type: str, info: Dict, epoch: int,
             return None
             
         # print(f"Found checkpoint: {checkpoint_file}")
-        if net_type == "quantile":
+        if net_type == "unet_quantile":
             with open(checkpoint_file, 'r') as f:
                 data = json.load(f)
             result = {"lower_q": data['lower_q'], "upper_q": data['upper_q']}
@@ -151,7 +151,7 @@ def load_existing_checkpoint(experiment_type: str, info: Dict, epoch: int,
 
 class CalibrateModelTask(submitit.helpers.Checkpointable):
     def __init__(self, experiment_type: str, info: Dict, epoch: int,
-                 net_type: Literal['im2im', 'unet_im2im', "quantile"], calib_subset: int = 2000):
+                 net_type: Literal['im2im', 'unet_im2im', "unet_quantile"], calib_subset: int = 2000):
         os.environ['TMPDIR'] = "/tmp"
         self.experiment_type = experiment_type
         self.info = info
@@ -163,9 +163,8 @@ class CalibrateModelTask(submitit.helpers.Checkpointable):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Calibrating {self.experiment_type} - {self.net_type} - {self.epoch} - {device}")
 
-        model_key = "unet_quantile" if self.net_type == "quantile" else self.net_type
         model, run_folder = load_checkpoint_for_inference(
-            net=model_key,
+            net=self.net_type,
             in_channels=self.info['in_channels'], experiment_type=self.experiment_type,
             run_folder_root=self.info[f"{self.net_type}_root"], epoch=self.epoch,
             device=device, experiments_folder=self.info['experiments_folder']
@@ -177,11 +176,11 @@ class CalibrateModelTask(submitit.helpers.Checkpointable):
         calib_dataloader = get_calib_dataloader(
             self.experiment_type, self.info,
             net=self.net_type,
-            batch_size_multiplier=1 if self.net_type != "quantile" else 0.9,
+            batch_size_multiplier=1 if self.net_type != "unet_quantile" else 0.9,
             calib_subset=self.calib_subset
         )
         
-        if self.net_type == "quantile":
+        if self.net_type == "unet_quantile":
             checkpoint_file = analysis_dir / f"quantile_qs_epoch_{self.epoch}.json"
             data = compute_optimal_lambdas_quantile(
                 dataloader=calib_dataloader, model=model, alpha=0.1,
@@ -227,7 +226,7 @@ class CalibrationManager:
         self.ignore_checkpoints = ignore_checkpoints
         self.executor = create_local_executor(partition, logs_dir, timeout_min, job_name=f"{experiment_type}-calibration")
         
-    def calibrate(self, net_type: Literal['im2im', 'unet_im2im', "quantile"], 
+    def calibrate(self, net_type: Literal['im2im', 'unet_im2im', "unet_quantile"], 
                   epoch: Optional[int] = None) -> Dict[str, Any]:
         if epoch is None:
             epoch = self.info[f"{net_type}_epoch"]
@@ -260,14 +259,13 @@ class CalibrationManager:
         
         return results
     
-def get_intervals_and_risk(net_type: Literal["im2im", "unet_im2im", "quantile"],
+def get_intervals_and_risk(net_type: Literal["im2im", "unet_im2im", "unet_quantile"],
                            experiment_type: str, info: Dict, epoch: int,
                            lambda_or_lower_q: float, upper_q: Optional[float] = None,
                            test_subset: int = 2000, intervals_subset: int = 500_000,
                            device: torch.device = torch.device('cpu'),
                            df_file: Path = None, risk_file: Path = None) -> Tuple[pd.DataFrame, Dict]:
-    model_key = "unet_quantile" if net_type == "quantile" else net_type
-    model, run_folder = load_checkpoint_for_inference(net=model_key, in_channels=info["in_channels"], 
+    model, run_folder = load_checkpoint_for_inference(net=net_type, in_channels=info["in_channels"],
                                         experiment_type=experiment_type,
                                         run_folder_root=info[f"{net_type}_root"],
                                         epoch=epoch, device=device,

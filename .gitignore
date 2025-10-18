@@ -1,3 +1,8 @@
 *weights*
 checkpoints/
 *.pth
+wandb/
+experiments/
+__pycache__/
+slurm_archive/
+slurm*
