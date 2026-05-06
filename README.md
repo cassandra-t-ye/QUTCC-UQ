@@ -4,7 +4,7 @@
     <a style="text-decoration:none !important;" href="https://cassandra-t-ye.github.io/projects/QUTCC/" alt="website"> <img src="https://img.shields.io/badge/website-Cornell-yellow" /> </a>
     <a style="text-decoration:none !important;" href="https://opensource.org/licenses/MIT" alt="License"> <img src="https://img.shields.io/badge/license-MIT-blue.svg" /> </a> -->
 
-The official implementation of [QUTCC 🤗: Quantile Uncertainty Training and Conformal Calibration for Imaging Inverse Problems] <!-- (https://arxiv.org/abs/2507.14760) -->
+The official implementation of QUTCC 🤗: Quantile Uncertainty Training and Conformal Calibration for Imaging Inverse Problems <!-- (https://arxiv.org/abs/2507.14760) -->
 
 <p align="center">
   <img src="teaser.gif" alt="QUTCC Overview" width="1000"/>
